@@ -4,6 +4,7 @@ import sys
 import time
 import logging
 import argparse
+import datetime
 import ConfigParser
 
 
@@ -19,14 +20,19 @@ SUBJECT_NEPHEWS = 'nephews'
 
 
 class SaturdayMorning(object):
-    def __init__(self, src_dir, dry_run=False):
+    def __init__(self, src_dir, date=None, dry_run=False):
         if not os.path.isdir(src_dir):
             raise Exception("Source directory doesn't exist: %s" % src_dir)
         self.src_dir = src_dir
         self.dry_run = dry_run
+        self.today = _parse_date(date)
+        self._did_something = False
 
     def run(self, dst_dir):
+        self._did_something = False
         self._runOn(self.src_dir, dst_dir)
+        if not self._did_something:
+            logger.info("Nothing to do.")
 
     def _runOn(self, src_dir, dst_dir):
         conf_path = os.path.join(src_dir, CONF_NAME)
@@ -78,8 +84,7 @@ class SaturdayMorning(object):
         if not schedule:
             raise Exception("No schedule specified for: %s" % src_path)
 
-        today = time.localtime()
-        weekday_num = int(time.strftime('%w', today))
+        weekday_num = int(time.strftime('%w', self.today))
         day_name = DAY_NAMES[weekday_num]
 
         do_move = False
@@ -112,6 +117,23 @@ class SaturdayMorning(object):
         else:
             raise Exception("Unknown schedule: %s" % schedule)
 
+        if do_move:
+            self._did_something = True
+
+
+def _parse_date(date):
+    if not date:
+        return time.localtime()
+    if date.startswith('+') or date.startswith('-'):
+        today = datetime.datetime.now()
+        today += datetime.timedelta(days=int(date))
+        return today.timetuple()
+    try:
+        return time.strptime(date, "%Y/%m/%d")
+    except:
+        pass
+    raise Exception("Can't parse date: %s" % date)
+
 
 def _get_first_entry(path):
     entries = list(sorted(os.listdir(path)))
@@ -141,6 +163,8 @@ def main():
                         help="Show debug messages.")
     parser.add_argument('--dry-run', action='store_true',
                         help="Show what would happen, but don't move anything")
+    parser.add_argument('--date',
+                        help="Run as if it was the given date.")
     args = parser.parse_args()
 
     root_logger = logging.getLogger()
@@ -154,7 +178,7 @@ def main():
     root_logger.addHandler(handler)
 
     try:
-        sm = SaturdayMorning(args.source, dry_run=args.dry_run)
+        sm = SaturdayMorning(args.source, date=args.date, dry_run=args.dry_run)
         sm.run(args.destination)
     except Exception as ex:
         logger.exception(ex)
