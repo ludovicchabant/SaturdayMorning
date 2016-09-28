@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from setuptools import setup, find_packages
+from setuptools import setup
+
 
 setup(
     name="SaturdayMorning",
-    version='0.1',
+    version='0.1.1',
     description="A script for copying files and directories on a schedule.",
     long_description='',
     author='Ludovic Chabant',
@@ -13,7 +14,7 @@ setup(
     license="Apache License 2.0",
     url="http://bolt80.com/saturdaymorning",
     keywords='',
-    packages=find_packages(),
+    py_modules=['saturdaymorning'],
     install_requires=[],
     tests_require=[],
     classifiers=[],
