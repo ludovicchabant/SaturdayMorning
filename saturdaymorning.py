@@ -1,3 +1,4 @@
+import re
 import os
 import os.path
 import sys
@@ -59,23 +60,36 @@ class SaturdayMorning(object):
     def _moveSubjects(self, src_dir, dst_dir, config):
         subjects = config.get(CONF_SECTION_DEFAULT, 'move')
 
-        first_entry = _get_first_entry(src_dir)
-        logger.debug("Inspecting '%s'..." % first_entry)
-        if not first_entry:
+        entries = _get_ordered_entries(src_dir)
+        if not entries:
             logger.debug("Directy '%s' is empty... skipping." % src_dir)
             return
 
         config_opts = _tuples_to_dict(config.items(CONF_SECTION_DEFAULT))
         if subjects == SUBJECT_NEPHEWS:
-            if config.has_section(first_entry):
-                config_opts.update(_tuples_to_dict(config.items(first_entry)))
-            src_dir = os.path.join(src_dir, first_entry)
-            dst_dir = os.path.join(dst_dir, first_entry)
-            first_entry = _get_first_entry(src_dir)
+            first_entry = None
+            for entry in entries:
+                logger.debug("Inspecting nephews in '%s'..." % entry)
+                if config.has_section(entry):
+                    config_opts.update(_tuples_to_dict(config.items(entry)))
+                n_src_dir = os.path.join(src_dir, entry)
+                n_dst_dir = os.path.join(dst_dir, entry)
+                first_entry = _get_first_entry(n_src_dir)
+                if first_entry:
+                    src_dir = n_src_dir
+                    dst_dir = n_dst_dir
+                    break
+                else:
+                    logger.debug(
+                            "Nephew directory '%s' is empty... skipping." %
+                            n_src_dir)
             if not first_entry:
-                logger.debug("Directory '%s' is empty... skipping." % 
-                             os.path.join(src_dir, first_entry))
-                return
+                logger.debug(
+                        "No valid nephew found in '%s'... skipping." %
+                        src_dir)
+        else:
+            logger.debug("Using sibling '%s'." % entries[0])
+            first_entry = entries[0]
 
         src_path = os.path.join(src_dir, first_entry)
 
@@ -103,7 +117,8 @@ class SaturdayMorning(object):
                 do_move = True
                 move_reason = 'today is a %s' % DAY_NAMES[weekday_num]
             else:
-                move_reason = 'today is not a %s' % DAY_NAMES[weekday_num]
+                move_reason = ("today is not a %s (it's a %s)" %
+                               (schedule, DAY_NAMES[weekday_num]))
         if do_move:
             dst_path = os.path.join(dst_dir, first_entry)
             logger.info("Moving '%s' to '%s'..." % (src_path, dst_path))
@@ -124,6 +139,12 @@ class SaturdayMorning(object):
 def _parse_date(date):
     if not date:
         return time.localtime()
+    date = _do_parse_date(date)
+    logger.info("Running as if today was: %s" % time.strftime('%x', date))
+    return date
+
+
+def _do_parse_date(date):
     if date.startswith('+') or date.startswith('-'):
         today = datetime.datetime.now()
         today += datetime.timedelta(days=int(date))
@@ -141,6 +162,29 @@ def _get_first_entry(path):
         if e[0] != '.':
             return e
     return None
+
+
+def _get_ordered_entries(path):
+    return list(
+            sorted(
+                filter(
+                    lambda i: i[0] != '.',
+                    os.listdir(path)),
+                key=_get_episode_key))
+
+
+number_suffix_re = re.compile(r'\d+$')
+
+
+def _get_episode_key(path):
+    m = number_suffix_re.search(path)
+    if m:
+        start, end = m.span()
+        padlen = 6 - (end - start)
+        assert padlen >= 0
+        pad = '0' * padlen
+        return path[:start] + pad + path[start:]
+    return path
 
 
 def _tuples_to_dict(tuples):
