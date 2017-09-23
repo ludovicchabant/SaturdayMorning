@@ -6,7 +6,7 @@ import time
 import logging
 import argparse
 import datetime
-import ConfigParser
+import configparser
 
 
 logger = logging.getLogger(__name__)
@@ -18,6 +18,12 @@ DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday',
              'saturday']
 SUBJECT_SIBLINGS = 'siblings'
 SUBJECT_NEPHEWS = 'nephews'
+
+DEFAULTS = """
+[all]
+move=newphews
+schedule=
+"""
 
 
 class SaturdayMorning(object):
@@ -40,10 +46,8 @@ class SaturdayMorning(object):
         if os.path.isfile(conf_path):
             # Found a config file! See if we should move anything here.
             logging.debug("Found config in: %s" % src_dir)
-            config = ConfigParser.ConfigParser()
-            config.add_section(CONF_SECTION_DEFAULT)
-            config.set('DEFAULT', 'move', SUBJECT_NEPHEWS)
-            config.set('DEFAULT', 'schedule', None)
+            config = configparser.ConfigParser()
+            config.read_string(DEFAULTS)
             with open(conf_path, 'r') as fp:
                 config.readfp(fp)
 
@@ -62,7 +66,7 @@ class SaturdayMorning(object):
 
         entries = _get_ordered_entries(src_dir)
         if not entries:
-            logger.debug("Directy '%s' is empty... skipping." % src_dir)
+            logger.debug("Directory '%s' is empty... skipping." % src_dir)
             return
 
         config_opts = _tuples_to_dict(config.items(CONF_SECTION_DEFAULT))
@@ -70,14 +74,17 @@ class SaturdayMorning(object):
             first_entry = None
             for entry in entries:
                 logger.debug("Inspecting nephews in '%s'..." % entry)
-                if config.has_section(entry):
-                    config_opts.update(_tuples_to_dict(config.items(entry)))
                 n_src_dir = os.path.join(src_dir, entry)
                 n_dst_dir = os.path.join(dst_dir, entry)
                 first_entry = _get_first_entry(n_src_dir)
                 if first_entry:
                     src_dir = n_src_dir
                     dst_dir = n_dst_dir
+                    if config.has_section(entry):
+                        logger.debug(
+                            "Using configuration overrides for: %s" % entry)
+                        config_opts.update(
+                            _tuples_to_dict(config.items(entry)))
                     break
                 else:
                     logger.debug(
@@ -87,6 +94,7 @@ class SaturdayMorning(object):
                 logger.debug(
                         "No valid nephew found in '%s'... skipping." %
                         src_dir)
+                return
         else:
             logger.debug("Using sibling '%s'." % entries[0])
             first_entry = entries[0]
@@ -98,6 +106,7 @@ class SaturdayMorning(object):
         if not schedule:
             raise Exception("No schedule specified for: %s" % src_path)
 
+        logger.debug("Using schedule: %s" % schedule)
         weekday_num = int(time.strftime('%w', self.today))
         day_name = DAY_NAMES[weekday_num]
 
@@ -145,15 +154,20 @@ def _parse_date(date):
 
 
 def _do_parse_date(date):
+    if date == 'yesterday':
+        date = '-1'
+    elif date == 'tomorrow':
+        date = '+1'
+
     if date.startswith('+') or date.startswith('-'):
         today = datetime.datetime.now()
         today += datetime.timedelta(days=int(date))
         return today.timetuple()
+
     try:
         return time.strptime(date, "%Y/%m/%d")
     except:
-        pass
-    raise Exception("Can't parse date: %s" % date)
+        raise Exception("Can't parse date: %s" % date)
 
 
 def _get_first_entry(path):
@@ -177,6 +191,10 @@ number_suffix_re = re.compile(r'\d+$')
 
 
 def _get_episode_key(path):
+    # Typically season folder are just named `Season X` with no padding,
+    # so if we just order stuff naively, we'll get `Season 1`, `Season 10`,
+    # `Season 11`, `Season 2`. But we obviously want proper numbered order
+    # so we try to detect the number suffix.
     m = number_suffix_re.search(path)
     if m:
         start, end = m.span()
